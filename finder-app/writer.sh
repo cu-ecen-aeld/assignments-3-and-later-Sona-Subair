@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #Checking if the number of arguments is less than two
-if [ $# -lt 2 ];
+if [ $# -ne 2 ]
     then
         echo "Expected two arguments"
         exit 1
