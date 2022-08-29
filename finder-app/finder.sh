@@ -21,4 +21,5 @@ fi
 count=$(find "$filedir" -type f | wc -l)
 string_count=$(grep -r $string $filedir | wc -l)   
 
-echo "The number of files are ${count} and the number of matching lines are ${string_count}"       
+echo "The number of files are ${count} and the number of matching lines are ${string_count}"
+exit 0
