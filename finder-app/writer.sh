@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#Checking if the number of arguments is less than two
+#Checking if the number of arguments is not equal to two
 if [ $# -ne 2 ]
     then
         echo "Expected two arguments"
