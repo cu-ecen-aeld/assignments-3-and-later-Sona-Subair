@@ -1,14 +1,14 @@
 SRC := writer.c
 TARGET = writer
-OBJS := $(SRC:.c=.o)
+#OBJS := $(SRC:.c=.o)
 
 CC=gcc
-CR_C = 
+CROSS_COMPILE= 
 
 all:$(TARGET)
 
 $(TARGET) : $(OBJS)
-	$(CR_C)$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) -o $(TARGET) $(LDFLAGS)
+	$(CROSS_COMPILE)$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 clean:
 	-rm -f *.o $(TARGET) *.elf *.map

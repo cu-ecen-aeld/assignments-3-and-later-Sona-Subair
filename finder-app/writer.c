@@ -1,18 +1,24 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include<stdio.h>
-#include<unistd.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
+#include <sys/syslog.h>
+#include <string.h>
+#include <errno.h>
+
 
 void usage(){
     printf("Expected two additional arguments.");
 }
 
 int main(int argc,char** argv){
+
     if(argc !=3){
         usage();
-        exit(1);
+        closelog ();
+        return(1);
     }
 
     size_t count;
@@ -20,22 +26,29 @@ int main(int argc,char** argv){
     char* file_path=argv[1];
     char* string=argv[2];
 
-    int fd = open(file_path, O_WRONLY | O_CREAT | O_TRUNC ,0700);
+    int fd = open(file_path, O_RDWR | O_CREAT ,0644);
     if (fd == -1){
     printf("File was not opened properly");
+    syslog (LOG_USER, "Unable to open file");
     perror ("open");
-        exit(1);
+    syslog(LOG_ERR, "Couldn't open: %s", strerror(errno));
+    return(1);
     }
 
-count = sizeof (string);
+count = strlen(string);
 nr = write(fd, string, count);
 if (nr == -1){
         printf("Not successfull");
-        exit(-1);
+        syslog (LOG_USER, "Not Successfull");
+        syslog(LOG_ERR, "Issue while writing: %s", strerror(errno));     
+        return(1);
 }
 else if (nr != count){
         printf("Partial write");
-        exit(-1);
+        syslog (LOG_USER, "partial write");       
+        return(1);
 }
-exit(0);
+else
+close(fd);
+return(0);
 }
