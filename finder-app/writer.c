@@ -10,14 +10,16 @@
 
 
 void usage(){
-    printf("Expected two additional arguments.");
+    printf("\nExpected two additional arguments.");
+    printf("\nArgument 1: Path to file.");
+    printf("\nArgument 2: Word to be copied to file");
 }
 
 int main(int argc,char** argv){
-
+openlog("finder-log",LOG_PID|LOG_ERR,LOG_USER);  
+setlogmask(LOG_UPTO(LOG_DEBUG));
     if(argc !=3){
         usage();
-        closelog ();
         return(1);
     }
 
@@ -26,29 +28,30 @@ int main(int argc,char** argv){
     char* file_path=argv[1];
     char* string=argv[2];
 
-    int fd = open(file_path, O_RDWR | O_CREAT ,0644);
+    int fd = open(file_path, O_RDWR| O_CREAT ,0644);
     if (fd == -1){
-    printf("File was not opened properly");
-    syslog (LOG_USER, "Unable to open file");
-    perror ("open");
-    syslog(LOG_ERR, "Couldn't open: %s", strerror(errno));
+    syslog (LOG_USER, "Unable to open file, Check the perssion");
+    syslog(LOG_ERR, "ERROR: %s", strerror(errno));
     return(1);
-    }
+    }    
 
 count = strlen(string);
+syslog (LOG_DEBUG, "Wrinting %s to %s.",string,file_path);
+
 nr = write(fd, string, count);
 if (nr == -1){
-        printf("Not successfull");
-        syslog (LOG_USER, "Not Successfull");
-        syslog(LOG_ERR, "Issue while writing: %s", strerror(errno));     
+        syslog (LOG_USER, "Writing to file not Successfull");
+        syslog(LOG_ERR, "Error: %s", strerror(errno));     
         return(1);
 }
 else if (nr != count){
-        printf("Partial write");
         syslog (LOG_USER, "partial write");       
         return(1);
 }
 else
+syslog (LOG_USER, "Writing Successfull"); 
+
 close(fd);
+closelog();
 return(0);
 }
