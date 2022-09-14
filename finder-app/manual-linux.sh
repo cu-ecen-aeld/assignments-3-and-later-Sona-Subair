@@ -34,7 +34,7 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
-    # TODO: Add your kernel build steps here
+    #Add your kernel build steps here
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
     make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
@@ -54,11 +54,12 @@ then
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
-# TODO: Create necessary base directories
+#Create necessary base directories
 mkdir ${OUTDIR}/rootfs
-cd ${OUTDIR}/rootfs && mkdir {bin,dev,etc,lib,proc,sys,sbin,tmp,usr,var,lib64}
+cd ${OUTDIR}/rootfs && mkdir {bin,dev,etc,lib,proc,sys,sbin,tmp,usr,var,lib64,home}
 mkdir var/log
-cd usr && mkdir{bin,sbin}
+mkdir home/conf
+cd usr && mkdir {bin,sbin}
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -73,42 +74,44 @@ else
     cd busybox
 fi
 
-# TODO: Make and install busybox
-path=~/rootfts/bin
-export PATH=~/rootfts/bin:$PATH
-source .bashrc
-sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfts install
+#Make and install busybox
+sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfs install
 
 echo "Library dependencies"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
+${CROSS_COMPILE}readelf -a busybox | grep "program interpreter"
+${CROSS_COMPILE}readelf -a busybox | grep "Shared library"
 
-# TODO: Add library dependencies to rootfs
-SYS_ROOT=$($(CROSS_COMPILE)gcc -print-sysroot)
+#Add library dependencies to rootfs
 cd ${OUTDIR}/rootfs
-cp -a $SYSYROOT/lib/ld-linux-aarch64.so.1 lib
+SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
+
+cp  ${SYSROOT}/lib/ld-linux-aarch64.so.1 lib
 #cp -a $SYSYROOT/lib/ld-2.22.so.lib
-cp -a $SYSYROOT/lib64/libm.so.6 lib64
+cp ${SYSROOT}/lib64/libm.so.6 lib64
 #cp -a $SYSYROOT/lib64/libm-2.22.so lib64
-cp -a $SYSYROOT/lib64/libresolv.so.2 lib64
-cp -a $SYSYROOT/lib64/libc.so.6 lib64
+cp  ${SYSROOT}/lib64/libresolv.so.2 lib64
+cp  ${SYSROOT}/lib64/libc.so.6 lib64
 #cp -a $SYSYROOT/lib64/libc-2.22.so lib64
 
 # INSTALL_MOD_PATHS=${OUTDIR}/rootfts
 # modules_install
 
-# TODO: Make device nodes
+# Make device nodes
 sudo mknod -m 666 dev/null c 1 3
 sudo mknod -m 600 dev/console c 5 1
-# TODO: Clean and build the writer utility
+#  Clean and build the writer utility
  cd ${FINDER_APP_DIR}
- make Clean
+ make clean
  make CROSS_COMPILE=${CROSS_COMPILE}
 
-# TODO: Copy the finder related scripts and executables to the /home directory
+#Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp ${FINDER_APP_DIR}/finder-app ${OUTDIR}/rootfs/home
-# TODO: Chown the root directory
-sudo chown -R root:root*
-# TODO: Create initramfs.cpio.gz
-find . | cpio -H newc -ov --owner root:root>../initramfs.cpio
+cp ${FINDER_APP_DIR}/writer ${FINDER_APP_DIR}/finder.sh ${FINDER_APP_DIR}/finder-test.sh  ${FINDER_APP_DIR}/start-qemu-app.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+#Chown the root directory
+cd ${OUTDIR}/rootfs
+sudo chown -R root:root *
+#Create initramfs.cpio.gz
+find . | cpio -H newc -ov --owner root:root >../initramfs.cpio
+cd ..
+gzip initramfs.cpio
