@@ -56,10 +56,10 @@ fi
 
 #Create necessary base directories
 mkdir ${OUTDIR}/rootfs
-cd ${OUTDIR}/rootfs && mkdir {bin,dev,etc,lib,proc,sys,sbin,tmp,usr,var,lib64,home}
-mkdir var/log
-mkdir home/conf
-cd usr && mkdir {bin,sbin}
+cd ${OUTDIR}/rootfs && mkdir -p {bin,dev,etc,lib,proc,sys,sbin,tmp,usr,var,lib64,home}
+mkdir -p var/log
+mkdir -p home/conf
+cd usr && mkdir -p {bin,sbin}
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -103,14 +103,17 @@ sudo mknod -m 600 dev/console c 5 1
  cd ${FINDER_APP_DIR}
  make clean
  make CROSS_COMPILE=${CROSS_COMPILE}
+ sudo chmod +x ${FINDER_APP_DIR}/finder.sh
 
 #Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp ${FINDER_APP_DIR}/writer ${FINDER_APP_DIR}/finder.sh ${FINDER_APP_DIR}/finder-test.sh  ${FINDER_APP_DIR}/start-qemu-app.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/writer ${FINDER_APP_DIR}/finder.sh ${FINDER_APP_DIR}/finder-test.sh ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
 #Chown the root directory
-cd ${OUTDIR}/rootfs
+
 sudo chown -R root:root *
+
+cd ${OUTDIR}/rootfs
 #Create initramfs.cpio.gz
 find . | cpio -H newc -ov --owner root:root >../initramfs.cpio
 cd ..
