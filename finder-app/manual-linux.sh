@@ -84,14 +84,10 @@ ${CROSS_COMPILE}readelf -a busybox | grep "Shared library"
 #Add library dependencies to rootfs
 cd ${OUTDIR}/rootfs
 SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
-
 cp  ${SYSROOT}/lib/ld-linux-aarch64.so.1 lib
-#cp -a $SYSYROOT/lib/ld-2.22.so.lib
 cp ${SYSROOT}/lib64/libm.so.6 lib64
-#cp -a $SYSYROOT/lib64/libm-2.22.so lib64
 cp  ${SYSROOT}/lib64/libresolv.so.2 lib64
 cp  ${SYSROOT}/lib64/libc.so.6 lib64
-#cp -a $SYSYROOT/lib64/libc-2.22.so lib64
 
 # INSTALL_MOD_PATHS=${OUTDIR}/rootfts
 # modules_install
