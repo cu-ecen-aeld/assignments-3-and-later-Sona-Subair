@@ -82,9 +82,7 @@ bool do_exec(int count,...)
     }      
     va_end(args);
     return(false);
-
-    va_end(args);
-    return(false);    
+  
 }
 /**
 * @param outputfile - The full path to the file to write with command output.
@@ -121,8 +119,8 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         return false;
     }
     else if(pid==0){ 
-   if (dup2(fd, 1) < 0)
-    { perror("dup2"); 
+   if (dup2(fd, 1) < 0){ 
+    perror("dup2"); 
     exit(-1); }
     close(fd);
     ret=execv(command[0],command);
