@@ -5,7 +5,7 @@ TARGET = writer
 CC=gcc
 CROSS_COMPILE= 
 
-all:$(TARGET)
+all: writer
 
 $(TARGET) : $(OBJS)
 	$(CROSS_COMPILE)$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) $(SRC) -o $(TARGET) $(LDFLAGS)
