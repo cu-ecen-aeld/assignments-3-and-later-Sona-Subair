@@ -118,34 +118,30 @@ while(1){
         current_size+=BUFFER_SIZE;
     }
     file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
-    syslog(LOG_USER, "EHere2");  
     if(file_fd == -1){
         syslog(LOG_USER, "Unable to open file to read, Check the permission");
         perror("open");
         return(-1);
     }     
-          while(nr=write(file_fd, &buf, size_recived);
+          while(nr=write(file_fd, &buf, size_recived)){
         if(nr == -1){
             syslog(LOG_USER, "Writing to file not Successfull");  
             return(-1);
-            }
-            syslog(LOG_USER, "EHere3");      
+            }     
+          }
 
     char message[BUFFER_SIZE];
     lseek(file_fd,0,SEEK_SET);
     while(nr=read(file_fd,message,BUFFER_SIZE)!=0){
         if(nr == -1){
-            syslog(LOG_USER, "EHere7"); 
             syslog(LOG_USER, "Reading from file not Successfull");   
             return(-1);
-        } 
-        syslog(LOG_USER, "EHere8");  
+        }  
         s_send=send(new_sockfd,message,nr,0);
         if(s_send<0){
            syslog(LOG_USER, "Sending failed");  
         }
-    }
-        syslog(LOG_USER, "EHere10");     
+    }   
         
 }
 remove(FILE_PATH);
