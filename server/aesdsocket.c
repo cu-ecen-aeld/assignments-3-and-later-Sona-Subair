@@ -14,21 +14,90 @@
 #include<string.h>
 #include<arpa/inet.h>
 #include<netinet/in.h>
+#include "queue.h"
+#include <pthread.h>
 
-// struct sockaddr{
-//     sa_family_t sa_family;
-//     char sa_data[14];
-// }
+//pthread_mutex_t *mutex;
 
 #define PORT "9000"
-#define BACKLOG (6)
+#define BACKLOG (5)
 #define BUFFER_SIZE (1024)
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
+pthread_mutex_t *mutex;
+
+struct thread_data{
+    pthread_t thread_id;
+    int socketfd;
+    struct sockaddr *client;
+    bool connection_complete_success;
+    pthread_mutex_t *mutex;
+    SLIST_ENTRY(thread_data) entries;
+};
+
+SLIST_HEAD(slisthead,thread_data) head=SLIST_HEAD_INITIALIZER(&head);
+
+void* thread_function(void* thread_param){
+
+    int nr,ret;
+    int size_recived=0,size_read=0,s_recv,s_send,current_size=0;
+    char clientIP[INET6_ADDRSTRLEN];
+    struct thread_data* thread_info = (struct thread_data *)thread_param;
+    inet_ntop(AF_INET,thread_info->client,clientIP,sizeof(clientIP));
+    bool recv_complete=false;
+    while(!recv_complete){
+        buf=(char*)(realloc(buf,current_size+BUFFER_SIZE));
+        s_recv=recv(thread_info->socketfd,(buf+current_size),BUFFER_SIZE,0);
+        if(s_recv==-1){
+            syslog(LOG_USER, "Error while recieving");
+            return();
+        }
+        
+        size_recived=current_size+s_recv;
+        if(size_recived>0 && buf[size_recived-1]=='\n'){
+            recv_complete=true;
+            syslog(LOG_USER, "Recieving complete");
+            buf[size_recived-1]='\n';
+        }
+        current_size+=BUFFER_SIZE;
+    }
+    if(recv_complete){
+    file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
+    if(file_fd == -1){
+        syslog(LOG_USER, "Unable to open file to read, Check the permission");
+        perror("open");
+        return();
+    }     
+        nr=write(file_fd, buf, size_recived);
+        if(nr!=size_recived){
+            syslog(LOG_USER, "Writing to file not Successfull");  
+            return();
+            }     
+    }
+    char message[BUFFER_SIZE];
+    lseek(file_fd,0,SEEK_SET);
+    while((nr=read(file_fd,message,BUFFER_SIZE))!=0){
+        if(nr ==-1){
+            syslog(LOG_USER, "Reading from file not Successfull");   
+            return(-1);
+        } 
+        s_send=send(thread_info->socketfd,message,(nr/sizeof(char)),0);
+        if(s_send<0){
+           syslog(LOG_USER, "Sending failed"); 
+        }
+        syslog(LOG_USER, "Sending complete");          
+    }     
+thread_info->connection_complete_success =true;   
+close(thread_info->socketfd);
+close(file_fd);      
+free(buf); 
+buf=NULL;          
+}
+
 int sockfd,new_sockfd,file_fd;
 bool interrupted=false;
-struct addrinfo *server_info=NULL;
 char* buf=NULL;
+struct addrinfo *server_info=NULL;
 
 static void signal_handler (int signo)
 {
@@ -55,15 +124,14 @@ static void signal_handler (int signo)
 }
 
 int main(int argc,char* argv[]){
+
 struct addrinfo hints;
 bool deamon=false;
 interrupted=false;
-int status,nr,ret;
-int size_recived=0,size_read=0,s_recv,s_send,current_size=0,tr=1;
 struct sockaddr client_addr;
-char clientIP[INET6_ADDRSTRLEN];
 socklen_t address_len=sizeof(struct sockaddr);
 socklen_t addr_size=sizeof(client_addr);
+int status,ret,tr=1;
 
 if(argc>=2){
     if(strcmp(argv[1],"-d")==0){
@@ -73,6 +141,7 @@ if(argc>=2){
 
 signal (SIGTERM, signal_handler);
 signal (SIGINT, signal_handler);
+
 
 openlog("aesd-socket",LOG_PID|LOG_ERR,LOG_USER);     
 setlogmask(LOG_UPTO(LOG_DEBUG));
@@ -100,12 +169,7 @@ if(status!=0){
     syslog(LOG_USER, "Error while getting address");
     return(-1);
 }
-// sockfd=socket(server_info->ai_family,server_info->ai_socktype,server_info->ai_protocol);
-// if(sockfd==-1){
-//     syslog(LOG_USER, "Not able to create socket");
-//     perror("socket");
-//     return(-1);
-// }
+
 ret=bind(sockfd,server_info->ai_addr,sizeof(struct sockaddr));
 if(ret<0){
     syslog(LOG_USER, "Binding not done.");
@@ -120,7 +184,8 @@ if(deamon){
         perror("daemon");
     }
 }
-
+ret=pthread_mutex_init(&mutex,NULL)
+SLIST_INIT(&head);
 syslog(LOG_USER, "Listening");
 listen(sockfd,BACKLOG);
 while(!interrupted){  
@@ -128,6 +193,7 @@ while(!interrupted){
     size_read=0;
     current_size=0;
     buf=malloc(BUFFER_SIZE*sizeof(char*));
+    struct thread_data* client_data=malloc(sizeof(struct(thread_data)));
     new_sockfd=accept(sockfd,&client_addr,&addr_size);
     if(new_sockfd==-1){
         syslog(LOG_USER, "Error while accepting");
@@ -135,55 +201,28 @@ while(!interrupted){
         close(sockfd);
         return(-1);
     }
+    else{
+        client_data->socketfd=new_sockfd;
+        client_data->client=&client_addr;
+        client_data->connection_complete_success=false;
+    }
     syslog(LOG_USER, "Accepted Connection");
-    inet_ntop(AF_INET,&client_addr,clientIP,sizeof(clientIP));
-    bool recv_complete=false;
-    while(!recv_complete){
-        buf=(char*)(realloc(buf,current_size+BUFFER_SIZE));
-        s_recv=recv(new_sockfd,(buf+current_size),BUFFER_SIZE,0);
-        if(s_recv==-1){
-            syslog(LOG_USER, "Error while recieving");
-            return(-1);
-        }
-        
-        size_recived=current_size+s_recv;
-        if(size_recived>0 && buf[size_recived-1]=='\n'){
-            recv_complete=true;
-            syslog(LOG_USER, "Recieving complete");
-            buf[size_recived-1]='\n';
-        }
-        current_size+=BUFFER_SIZE;
+
+    ret=pthread_create(&client_data->thread_id,NULL,threadfunc,client_data);
+    //Check if creation of thread was successfull
+    if(ret!=0){
+        return (-1);
+    }  
+        if(ret==0){
+        *thread=client_data->thread_id;
+        return true;
+    }   
+    SLIST_INSERT_HEAD(&head,client_data,entries) 
+    if(client_data->connection_complete_success){
+        pthread_join(*thread,NULL);
+        SLIST_REMOVE(&head,client_data, thread_data, entries);
     }
-    if(recv_complete){
-    file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
-    if(file_fd == -1){
-        syslog(LOG_USER, "Unable to open file to read, Check the permission");
-        perror("open");
-        return(-1);
-    }     
-        nr=write(file_fd, buf, size_recived);
-        if(nr!=size_recived){
-            syslog(LOG_USER, "Writing to file not Successfull");  
-            return(-1);
-            }     
-    }
-    char message[BUFFER_SIZE];
-    lseek(file_fd,0,SEEK_SET);
-    while((nr=read(file_fd,message,BUFFER_SIZE))!=0){
-        if(nr ==-1){
-            syslog(LOG_USER, "Reading from file not Successfull");   
-            return(-1);
-        } 
-        s_send=send(new_sockfd,message,(nr/sizeof(char)),0);
-        if(s_send<0){
-           syslog(LOG_USER, "Sending failed"); 
-        }
-        syslog(LOG_USER, "Sending complete");          
-    }     
-close(new_sockfd);
-close(file_fd);      
-free(buf); 
-buf=NULL;       
+ 
 }
 close(new_sockfd);
 close(file_fd);
