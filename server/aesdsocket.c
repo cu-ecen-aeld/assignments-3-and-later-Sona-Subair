@@ -16,6 +16,9 @@
 #include<netinet/in.h>
 #include "queue.h"
 #include <pthread.h>
+#include <time.h>
+#include <sys/time.h>
+#include <string.h>
 
 //pthread_mutex_t *mutex;
 
@@ -24,84 +27,142 @@
 #define BUFFER_SIZE (1024)
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
-pthread_mutex_t *mutex;
+pthread_mutex_t mutex;
+int sockfd,new_sockfd,file_fd;
+bool interrupted=false;
+char* buf=NULL;
+struct addrinfo *server_info=NULL;
+int total_connections=0;
+bool timer_alarm=false;
 
 struct thread_data{
     pthread_t thread_id;
     int socketfd;
     struct sockaddr *client;
     bool connection_complete_success;
-    pthread_mutex_t *mutex;
     SLIST_ENTRY(thread_data) entries;
 };
 
 SLIST_HEAD(slisthead,thread_data) head=SLIST_HEAD_INITIALIZER(&head);
 
-void* thread_function(void* thread_param){
+int set_time(){
+    int ret;
+    struct itimerval timer_1;
+    getitimer(ITIMER_REAL,&timer_1);
+    timer_1.it_value.tv_sec=10;
+    timer_1.it_value.tv_usec=0;
+    timer_1.it_interval.tv_sec=10;
+    timer_1.it_interval.tv_usec=0;
+    ret=setitimer(ITIMER_REAL,&timer_1,NULL);
+    return(ret);
+}
+int reset_time(){
+    int ret;
+    struct itimerval timer_1;
+    getitimer(ITIMER_REAL,&timer_1);
+    timer_1.it_value.tv_sec=0;
+    timer_1.it_value.tv_usec=0;
+    timer_1.it_interval.tv_sec=0;
+    timer_1.it_interval.tv_usec=0;
+    ret=setitimer(ITIMER_REAL,&timer_1,NULL);
+    return(ret);
+}
 
+int write_time_to_file(int fd){
+    char outstr[100]={};
+    char buffer[100];
+    time_t t;
+    struct tm *tmp;
+    const char* fmt= "%a, %d %b %Y %T %z";
+    t = time(NULL);
+    tmp = localtime(&t);
+    if (tmp == NULL) {
+        perror("localtime");
+        return(-1);
+    }
+
+    if (strftime(outstr, sizeof(outstr), fmt, tmp) == 0) {
+        return(-1);
+    }
+    strcpy(buffer,"timestamp:");
+    strcat(buffer,outstr);
+    strcat(buffer,"\n");
+    write(fd,buffer,strlen(buffer)*sizeof(char));
+    return(0);
+}
+
+
+void* thread_function(void* thread_param){
     int nr,ret;
     int size_recived=0,size_read=0,s_recv,s_send,current_size=0;
     char clientIP[INET6_ADDRSTRLEN];
     struct thread_data* thread_info = (struct thread_data *)thread_param;
     inet_ntop(AF_INET,thread_info->client,clientIP,sizeof(clientIP));
     bool recv_complete=false;
+    buf=malloc(BUFFER_SIZE*sizeof(char*));
     while(!recv_complete){
         buf=(char*)(realloc(buf,current_size+BUFFER_SIZE));
         s_recv=recv(thread_info->socketfd,(buf+current_size),BUFFER_SIZE,0);
         if(s_recv==-1){
             syslog(LOG_USER, "Error while recieving");
-            return();
+            perror("recv");
+            exit(-1);
         }
-        
         size_recived=current_size+s_recv;
         if(size_recived>0 && buf[size_recived-1]=='\n'){
             recv_complete=true;
-            syslog(LOG_USER, "Recieving complete");
             buf[size_recived-1]='\n';
         }
         current_size+=BUFFER_SIZE;
     }
     if(recv_complete){
+    ret=pthread_mutex_lock(&mutex); 
+    if(ret!=0){
+    syslog(LOG_USER,"Error while unlocking mutex");
+    exit(-1);
+} 
     file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
     if(file_fd == -1){
         syslog(LOG_USER, "Unable to open file to read, Check the permission");
         perror("open");
-        return();
+        exit(-1);
     }     
+    if(timer_alarm){
+        write_time_to_file(file_fd);
+        timer_alarm=false;    
+    }
         nr=write(file_fd, buf, size_recived);
         if(nr!=size_recived){
-            syslog(LOG_USER, "Writing to file not Successfull");  
-            return();
-            }     
+            syslog(LOG_USER, "Writing to file not Successfull"); 
+            perror("write");
+            exit(-1);
+            }   
+           
     }
     char message[BUFFER_SIZE];
     lseek(file_fd,0,SEEK_SET);
     while((nr=read(file_fd,message,BUFFER_SIZE))!=0){
         if(nr ==-1){
             syslog(LOG_USER, "Reading from file not Successfull");   
-            return(-1);
+            exit(-1);
         } 
         s_send=send(thread_info->socketfd,message,(nr/sizeof(char)),0);
         if(s_send<0){
            syslog(LOG_USER, "Sending failed"); 
-        }
-        syslog(LOG_USER, "Sending complete");          
-    }     
-thread_info->connection_complete_success =true;   
-close(thread_info->socketfd);
-close(file_fd);      
-free(buf); 
-buf=NULL;          
+        }        
+    }
+close(file_fd);  
+ret=pthread_mutex_unlock(&mutex);   
+if(ret!=0){
+    syslog(LOG_USER,"Error while unlocking mutex");
+    exit(-1);
 }
-
-int sockfd,new_sockfd,file_fd;
-bool interrupted=false;
-char* buf=NULL;
-struct addrinfo *server_info=NULL;
+thread_info->connection_complete_success =true;            
+}
 
 static void signal_handler (int signo)
 {
-    int ret;
+    int ret,fd;
     if(signo == SIGINT || signo == SIGTERM){   
     syslog (LOG_USER,"Caught Signal Exiting!\n");
     close(file_fd);
@@ -110,21 +171,29 @@ static void signal_handler (int signo)
         perror("remove");
         syslog(LOG_USER, "Error while removing file");
     }
-    close(new_sockfd);
-    close(sockfd);    
+    else syslog(LOG_USER,"File removed");
     if(buf!=NULL){
     free(buf);
     }
-    if(server_info!=NULL){
-    freeaddrinfo(server_info);
-    }
-    }
     interrupted=true;   
-    exit (EXIT_SUCCESS);   
+    exit (EXIT_SUCCESS);  
+    } 
+    if(signo == SIGALRM){
+        if(total_connections==0){
+        fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
+        write_time_to_file(fd);
+        }
+        else
+            timer_alarm=true;   
+    }
 }
+
 
 int main(int argc,char* argv[]){
 
+openlog("aesd-socket",LOG_PID|LOG_ERR,LOG_USER); 
+setlogmask(LOG_UPTO(LOG_DEBUG));  
+syslog(LOG_USER, "Error1");
 struct addrinfo hints;
 bool deamon=false;
 interrupted=false;
@@ -132,20 +201,19 @@ struct sockaddr client_addr;
 socklen_t address_len=sizeof(struct sockaddr);
 socklen_t addr_size=sizeof(client_addr);
 int status,ret,tr=1;
-
+syslog(LOG_USER, "Error2");
 if(argc>=2){
     if(strcmp(argv[1],"-d")==0){
         deamon=true;
     }
 }
 
+
+syslog(LOG_USER, "Error3");
 signal (SIGTERM, signal_handler);
 signal (SIGINT, signal_handler);
-
-
-openlog("aesd-socket",LOG_PID|LOG_ERR,LOG_USER);     
-setlogmask(LOG_UPTO(LOG_DEBUG));
-
+signal (SIGALRM, signal_handler);
+    
 sockfd=socket(PF_INET,SOCK_STREAM,0);
 if(sockfd==-1){
     syslog(LOG_USER, "Not able to create socket");
@@ -157,7 +225,6 @@ if (setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&tr,sizeof(int)) == -1) {
     perror("setsockopt");
     return(-1);
 }
-
 memset(&hints,0,sizeof(hints));
 hints.ai_family = AF_INET;
 hints.ai_socktype = SOCK_STREAM;
@@ -169,7 +236,6 @@ if(status!=0){
     syslog(LOG_USER, "Error while getting address");
     return(-1);
 }
-
 ret=bind(sockfd,server_info->ai_addr,sizeof(struct sockaddr));
 if(ret<0){
     syslog(LOG_USER, "Binding not done.");
@@ -184,16 +250,17 @@ if(deamon){
         perror("daemon");
     }
 }
-ret=pthread_mutex_init(&mutex,NULL)
+struct thread_data* thread;
+ret=pthread_mutex_init(&mutex,NULL);
 SLIST_INIT(&head);
 syslog(LOG_USER, "Listening");
 listen(sockfd,BACKLOG);
-while(!interrupted){  
-    size_recived=0;
-    size_read=0;
-    current_size=0;
-    buf=malloc(BUFFER_SIZE*sizeof(char*));
-    struct thread_data* client_data=malloc(sizeof(struct(thread_data)));
+ret=set_time();
+if(ret!=0){
+    perror("setitimer");
+}
+syslog(LOG_USER, "Error4");
+while(!interrupted){ 
     new_sockfd=accept(sockfd,&client_addr,&addr_size);
     if(new_sockfd==-1){
         syslog(LOG_USER, "Error while accepting");
@@ -201,30 +268,25 @@ while(!interrupted){
         close(sockfd);
         return(-1);
     }
-    else{
-        client_data->socketfd=new_sockfd;
-        client_data->client=&client_addr;
-        client_data->connection_complete_success=false;
-    }
+    struct thread_data* client_data=malloc(sizeof(struct thread_data));
+    client_data->socketfd=new_sockfd;
+    client_data->client=&client_addr;
+    client_data->connection_complete_success=false;
     syslog(LOG_USER, "Accepted Connection");
-
-    ret=pthread_create(&client_data->thread_id,NULL,threadfunc,client_data);
+syslog(LOG_USER, "Error5");
+    ret=pthread_create(&(client_data->thread_id),NULL,thread_function,client_data);
     //Check if creation of thread was successfull
     if(ret!=0){
         return (-1);
     }  
-        if(ret==0){
-        *thread=client_data->thread_id;
-        return true;
-    }   
-    SLIST_INSERT_HEAD(&head,client_data,entries) 
+    SLIST_INSERT_HEAD(&head,client_data,entries);
     if(client_data->connection_complete_success){
-        pthread_join(*thread,NULL);
+        close(client_data->socketfd);
+        pthread_join(client_data->thread_id,NULL);
         SLIST_REMOVE(&head,client_data, thread_data, entries);
+
     }
- 
 }
-close(new_sockfd);
 close(file_fd);
 remove(FILE_PATH);
 syslog(LOG_USER, "File removed");

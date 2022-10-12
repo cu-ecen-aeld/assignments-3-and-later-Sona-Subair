@@ -4,6 +4,7 @@ TARGET = aesdsocket
 
 CC=gcc
 CROSS_COMPILE= 
+LDFLAGS= -pthread  -lpthread
 
 all: aesdsocket
 
