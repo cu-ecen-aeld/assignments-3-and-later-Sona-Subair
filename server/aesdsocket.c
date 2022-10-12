@@ -163,6 +163,7 @@ thread_info->connection_complete_success =true;
 static void signal_handler (int signo)
 {
     int ret,fd;
+    struct thread_data* ele;
     if(signo == SIGINT || signo == SIGTERM){   
     syslog (LOG_USER,"Caught Signal Exiting!\n");
     close(file_fd);
@@ -171,7 +172,12 @@ static void signal_handler (int signo)
         perror("remove");
         syslog(LOG_USER, "Error while removing file");
     }
-    else syslog(LOG_USER,"File removed");
+    while(SLIST_EMPTY(&head)!=0){
+        ele=SLIST_FIRST(&head);
+        pthread_join(ele->thread_id,NULL);
+        SLIST_REMOVE_HEAD(&head,entries);
+        free(ele);
+    }
     if(buf!=NULL){
     free(buf);
     }
