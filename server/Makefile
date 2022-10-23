@@ -3,7 +3,6 @@ TARGET = aesdsocket
 #OBJS := $(SRC:.c=.o)
 
 CC=gcc
-CROSS_COMPILE= 
 LDFLAGS= -pthread  -lpthread
 
 all: aesdsocket
