@@ -163,20 +163,24 @@ thread_info->connection_complete_success =true;
 static void signal_handler (int signo)
 {
     int ret,fd;
-    struct thread_data* ele;
+    struct thread_data* ele=NULL;
     if(signo == SIGINT || signo == SIGTERM){   
     syslog (LOG_USER,"Caught Signal Exiting!\n");
+    if (access(FILE_PATH, F_OK) != -1){
     close(file_fd);
     ret=remove(FILE_PATH);
     if(ret==-1){
         perror("remove");
         syslog(LOG_USER, "Error while removing file");
     }
-    while(SLIST_EMPTY(&head)!=0){
+    }
+    while(SLIST_EMPTY(&head)==0){
         ele=SLIST_FIRST(&head);
+        if(ele->connection_complete_success==true){
         pthread_join(ele->thread_id,NULL);
         SLIST_REMOVE_HEAD(&head,entries);
         free(ele);
+        }
     }
     if(buf!=NULL){
     free(buf);
@@ -197,9 +201,9 @@ static void signal_handler (int signo)
 
 int main(int argc,char* argv[]){
 
+syslog(LOG_USER, "Started");
 openlog("aesd-socket",LOG_PID|LOG_ERR,LOG_USER); 
 setlogmask(LOG_UPTO(LOG_DEBUG));  
-syslog(LOG_USER, "Error1");
 struct addrinfo hints;
 bool deamon=false;
 interrupted=false;
@@ -207,16 +211,11 @@ struct sockaddr client_addr;
 socklen_t address_len=sizeof(struct sockaddr);
 socklen_t addr_size=sizeof(client_addr);
 int status,ret,tr=1;
-syslog(LOG_USER, "Error2");
 if(argc>=2){
     if(strcmp(argv[1],"-d")==0){
         deamon=true;
     }
 }
-
-
-
-syslog(LOG_USER, "Error3");
 signal (SIGTERM, signal_handler);
 signal (SIGINT, signal_handler);
 signal (SIGALRM, signal_handler);
@@ -266,7 +265,6 @@ ret=set_time();
 if(ret!=0){
     perror("setitimer");
 }
-syslog(LOG_USER, "Error4");
 while(!interrupted){ 
     new_sockfd=accept(sockfd,&client_addr,&addr_size);
     if(new_sockfd==-1){
@@ -294,8 +292,10 @@ syslog(LOG_USER, "Error5");
 
     }
 }
+if (access(FILE_PATH, F_OK) != -1){
 close(file_fd);
 remove(FILE_PATH);
+}
 syslog(LOG_USER, "File removed");
 closelog();
 return(0);
