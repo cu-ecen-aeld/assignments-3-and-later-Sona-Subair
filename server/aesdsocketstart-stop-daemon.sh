@@ -1,6 +1,8 @@
 #!/bin/sh
 
-case $1 in
+echo "Starting script"
+
+case "$1" in
 	start)
 		echo "Starting daemon"
 		start-stop-daemon -S -n aesdsocket -a /usr/bin/aesdsocket -- -d
