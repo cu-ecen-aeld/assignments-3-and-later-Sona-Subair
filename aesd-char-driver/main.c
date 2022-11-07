@@ -18,6 +18,10 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+#include <linux/mutex.h>
+#include <linux/slab.h>
+#include <linux/gfp.h>
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -28,8 +32,9 @@ struct aesd_dev aesd_device;
 
 
 int find_new_line(char* buffer, int count){
-    for(int i=0;i<count;i++){
-        if(buffer[i]=='/n'){
+    int i;
+    for(i=0;i<count;i++){
+        if(buffer[i]=='\n'){
             return(i);
         }
     }
@@ -41,8 +46,8 @@ int aesd_open(struct inode *inode, struct file *filp)
 {
     struct aesd_dev *dev;
     dev=container_of(inode->i_cdev, struct aesd_dev, cdev);
-    flip->private_data=dev;
-    if ( (filp->f_flags & O_ACCMODE) =  = O_WRONLY) {
+    filp->private_data=dev;
+    if ( (filp->f_flags & O_ACCMODE) == O_WRONLY) {
         scull_trim(dev); /* ignore errors */
     }
     PDEBUG("open");  
@@ -58,7 +63,7 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = 0,ret,entry_size;
+    ssize_t retval = 0,ret,data_size;
     struct aesd_buffer_entry *aesd_entry;
     struct aesd_dev *driver_data = filp->private_data;
     size_t entry_offset_byte_rtn;
@@ -68,9 +73,9 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         PDEBUG("Error while locking mutex");
         return ret;
     }
-    if(aesd_circular_buffer_find_entry_offset_for_fpos(&driver_data->circular_buffer, *f_pos, &entry_offset_byte_rtn)!=NULL){
+    if(aesd_circular_buffer_find_entry_offset_for_fpos(&driver_data->c_buffer, *f_pos, &entry_offset_byte_rtn)!=NULL){
         data_size=(entry_offset_byte_rtn < count)? entry_offset_byte_rtn:count;
-        ret=copy_to_user(buf, (entry_loc->buffptr + entry_offset_byte_rtn), data_size);
+        ret=copy_to_user(buf, (aesd_entry->buffptr + entry_offset_byte_rtn), data_size);
         if(ret){
             retval=-EFAULT;
             PDEBUG("Copying to user space failed");
@@ -80,28 +85,23 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             *f_pos+=data_size;
         }
     }
-    ret= mutex_unlock(&driver_data->char_dev_mutex_lock);
-    if(ret!=0){
-    PDEBUG("Error while unlocking mutex");
-    return ret;
-    }
     else{
         retval=0;
     }
+    mutex_unlock(&driver_data->char_dev_mutex_lock);    
     return retval;
 }
 
-ssize_t aesd_write(struct file?
+ssize_t aesd_write(struct file
  *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = -ENOMEM,ret;
-    int delimiter_index;
+    ssize_t retval = -ENOMEM;
+    int delimiter_index,ret;
     struct aesd_dev *driver_data = filp->private_data; 
-    struct aesd_buffer_entry entry_data;
     size_t packet_start=0,allocation_size=0,packet_buffer_size=0;
-    char* kernel_buffer=NULL,packet_buffer,return_buffer;
-    struct aesd_buffer_entry buf;
+    char* kernel_buffer=NULL,*packet_buffer=NULL,*return_buffer;
+    struct aesd_buffer_entry aesd_buf;
 
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
     ret= mutex_lock_interruptible(&driver_data->char_dev_mutex_lock);
@@ -119,16 +119,16 @@ ssize_t aesd_write(struct file?
         }
         while(delimiter_index!=-1){
         delimiter_index=find_new_line(kernel_buffer,count);
-        allocation_size=delimiter_index==-1?(count-packet_start):(delimiter-packet_start);
+        allocation_size=delimiter_index==-1?(count-packet_start):((delimiter_index-packet_start)+1);
         if(packet_buffer_size==0){
-            packet_buffer=kmalloc(allocation_size,GFP_KERNEL;)
+            packet_buffer=kmalloc(allocation_size,GFP_KERNEL);
             if(packet_buffer==NULL){
                 PDEBUG("Mallocation failed");
                 goto exit_mutex_unlock;
             }
         }
         if(packet_buffer_size>0){
-            packet_buffer=krealloc(packet_buffer,allocation_size);
+            packet_buffer=krealloc(packet_buffer,allocation_size,GFP_KERNEL);
             if(packet_buffer==NULL){
                 PDEBUG("Reallocation failed");
                 goto exit_mutex_unlock;
@@ -137,11 +137,11 @@ ssize_t aesd_write(struct file?
         memcpy((packet_buffer+packet_buffer_size),kernel_buffer,allocation_size);
         packet_buffer_size+=allocation_size;
         if(delimiter_index!=-1){
-            buf.buffptr=packet_buffer;
-            buf.size=packet_buffer_size;
-            return_buffer=aesd_circular_buffer_add_entry(&driver_data->c_buffer,&buf);
+            aesd_buf.buffptr=packet_buffer;
+            aesd_buf.size=packet_buffer_size;
+            return_buffer=aesd_circular_buffer_add_entry(&driver_data->c_buffer,&aesd_buf);
             if(return_buffer!=NULL){
-                free(return_buffer);
+                kfree(return_buffer);
             }
         }
         retval+=allocation_size;
@@ -149,12 +149,7 @@ ssize_t aesd_write(struct file?
     
     }
     exit_mutex_unlock:
-    ret= mutex_unlock(&driver_data->char_dev_mutex_lock);
-    if(ret!=0){
-    PDEBUG("Error while unlocking mutex");
-    return ret;
-    }    
-    
+    mutex_unlock(&driver_data->char_dev_mutex_lock);
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -206,12 +201,13 @@ int aesd_init_module(void)
 void aesd_cleanup_module(void)
 {
     dev_t devno = MKDEV(aesd_major, aesd_minor);
-
+    int offset_in,offset_out;
     cdev_del(&aesd_device.cdev);
-    offset_in=aesd_device.circular_buffer.in_offs;
-    offset_out=aesd_device.circular_buffer.out_offs;
-    while(aesd_device.circular_buffer.full!=false){
-        kfree(aesd_device.circular_buffer.entry[offset_in].buffptr);
+    offset_in=aesd_device.c_buffer.in_offs;
+    offset_out=aesd_device.c_buffer.out_offs;
+    while(aesd_device.c_buffer.full!=false){
+        kfree(aesd_device.c_buffer.entry[offset_out].buffptr);
+        offset_out=(offset_out+1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
     mutex_destroy(&aesd_device.char_dev_mutex_lock);
     unregister_chrdev_region(devno, 1);
