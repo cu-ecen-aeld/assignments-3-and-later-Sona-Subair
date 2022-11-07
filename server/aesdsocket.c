@@ -25,7 +25,7 @@
 #define PORT "9000"
 #define BACKLOG (5)
 #define BUFFER_SIZE (1024)
-#define FILE_PATH "/var/tmp/aesdsocketdata"
+#define FILE_PATH "/dev/aesdchar"
 
 pthread_mutex_t mutex;
 int sockfd,new_sockfd,file_fd;
@@ -45,51 +45,51 @@ struct thread_data{
 
 SLIST_HEAD(slisthead,thread_data) head=SLIST_HEAD_INITIALIZER(&head);
 
-int set_time(){
-    int ret;
-    struct itimerval timer_1;
-    getitimer(ITIMER_REAL,&timer_1);
-    timer_1.it_value.tv_sec=10;
-    timer_1.it_value.tv_usec=0;
-    timer_1.it_interval.tv_sec=10;
-    timer_1.it_interval.tv_usec=0;
-    ret=setitimer(ITIMER_REAL,&timer_1,NULL);
-    return(ret);
-}
-int reset_time(){
-    int ret;
-    struct itimerval timer_1;
-    getitimer(ITIMER_REAL,&timer_1);
-    timer_1.it_value.tv_sec=0;
-    timer_1.it_value.tv_usec=0;
-    timer_1.it_interval.tv_sec=0;
-    timer_1.it_interval.tv_usec=0;
-    ret=setitimer(ITIMER_REAL,&timer_1,NULL);
-    return(ret);
-}
+// int set_time(){
+//     int ret;
+//     struct itimerval timer_1;
+//     getitimer(ITIMER_REAL,&timer_1);
+//     timer_1.it_value.tv_sec=10;
+//     timer_1.it_value.tv_usec=0;
+//     timer_1.it_interval.tv_sec=10;
+//     timer_1.it_interval.tv_usec=0;
+//     ret=setitimer(ITIMER_REAL,&timer_1,NULL);
+//     return(ret);
+// }
+// int reset_time(){
+//     int ret;
+//     struct itimerval timer_1;
+//     getitimer(ITIMER_REAL,&timer_1);
+//     timer_1.it_value.tv_sec=0;
+//     timer_1.it_value.tv_usec=0;
+//     timer_1.it_interval.tv_sec=0;
+//     timer_1.it_interval.tv_usec=0;
+//     ret=setitimer(ITIMER_REAL,&timer_1,NULL);
+//     return(ret);
+// }
 
-int write_time_to_file(int fd){
-    char outstr[100]={};
-    char buffer[100];
-    time_t t;
-    struct tm *tmp;
-    const char* fmt= "%a, %d %b %Y %T %z";
-    t = time(NULL);
-    tmp = localtime(&t);
-    if (tmp == NULL) {
-        perror("localtime");
-        return(-1);
-    }
+// int write_time_to_file(int fd){
+//     char outstr[100]={};
+//     char buffer[100];
+//     time_t t;
+//     struct tm *tmp;
+//     const char* fmt= "%a, %d %b %Y %T %z";
+//     t = time(NULL);
+//     tmp = localtime(&t);
+//     if (tmp == NULL) {
+//         perror("localtime");
+//         return(-1);
+//     }
 
-    if (strftime(outstr, sizeof(outstr), fmt, tmp) == 0) {
-        return(-1);
-    }
-    strcpy(buffer,"timestamp:");
-    strcat(buffer,outstr);
-    strcat(buffer,"\n");
-    write(fd,buffer,strlen(buffer)*sizeof(char));
-    return(0);
-}
+//     if (strftime(outstr, sizeof(outstr), fmt, tmp) == 0) {
+//         return(-1);
+//     }
+//     strcpy(buffer,"timestamp:");
+//     strcat(buffer,outstr);
+//     strcat(buffer,"\n");
+//     write(fd,buffer,strlen(buffer)*sizeof(char));
+//     return(0);
+// }
 
 
 void* thread_function(void* thread_param){
@@ -127,10 +127,10 @@ void* thread_function(void* thread_param){
         perror("open");
         exit(-1);
     }     
-    if(timer_alarm){
-        write_time_to_file(file_fd);
-        timer_alarm=false;    
-    }
+    // if(timer_alarm){
+    //     write_time_to_file(file_fd);
+    //     timer_alarm=false;    
+    // }
         nr=write(file_fd, buf, size_recived);
         if(nr!=size_recived){
             syslog(LOG_USER, "Writing to file not Successfull"); 
@@ -188,14 +188,14 @@ static void signal_handler (int signo)
     interrupted=true;   
     exit (EXIT_SUCCESS);  
     } 
-    if(signo == SIGALRM){
-        if(total_connections==0){
-        fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
-        write_time_to_file(fd);
-        }
-        else
-            timer_alarm=true;   
-    }
+    // if(signo == SIGALRM){
+    //     if(total_connections==0){
+    //     fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
+    //     write_time_to_file(fd);
+    //     }
+    //     else
+    //         timer_alarm=true;   
+    // }
 }
 
 
@@ -216,7 +216,7 @@ if(argc>=2){
         deamon=true;
     }
 }
-signal (SIGTERM, signal_handler);
+//signal (SIGTERM, signal_handler);
 signal (SIGINT, signal_handler);
 signal (SIGALRM, signal_handler);
     
@@ -261,7 +261,7 @@ ret=pthread_mutex_init(&mutex,NULL);
 SLIST_INIT(&head);
 syslog(LOG_USER, "Listening");
 listen(sockfd,BACKLOG);
-ret=set_time();
+//ret=set_time();
 if(ret!=0){
     perror("setitimer");
 }
