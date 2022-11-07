@@ -48,7 +48,7 @@ int aesd_open(struct inode *inode, struct file *filp)
     dev=container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data=dev;
     if ( (filp->f_flags & O_ACCMODE) == O_WRONLY) {
-        scull_trim(dev); /* ignore errors */
+        //scull_trim(dev); /* ignore errors */
     }
     PDEBUG("open");  
     return 0;
