@@ -47,9 +47,6 @@ int aesd_open(struct inode *inode, struct file *filp)
     struct aesd_dev *dev;
     dev=container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data=dev;
-    if ( (filp->f_flags & O_ACCMODE) == O_WRONLY) {
-        //scull_trim(dev); /* ignore errors */
-    }
     PDEBUG("open");  
     return 0;
 }
@@ -93,15 +90,17 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     return retval;
 }
 
+ssize_t packet_buffer_size=0;
+char* packet_buffer=NULL;
 ssize_t aesd_write(struct file
  *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval=-ENOMEM;
-    int delimiter_index,ret;
+    int delimiter_index=0,ret;
     struct aesd_dev *driver_data=filp->private_data; 
-    size_t packet_start=0,allocation_size=0,packet_buffer_size=0;
-    char* kernel_buffer=NULL,*packet_buffer=NULL,*return_buffer;
+    size_t packet_start=0,allocation_size=0;
+    char* kernel_buffer=NULL,*removed_entry;
     struct aesd_buffer_entry aesd_buf;
 
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
@@ -113,14 +112,18 @@ ssize_t aesd_write(struct file
     kernel_buffer=kmalloc(count,GFP_KERNEL);
     if(kernel_buffer!=NULL){
         ret=copy_from_user(kernel_buffer,buf,count);
+        PDEBUG("Count recieved is:%ld",count);
+        PDEBUG("Kernel buffer is:%s",kernel_buffer);
         if(ret!=0){
-            ret=-EFAULT;
+            retval=-EFAULT;
             PDEBUG("Copying from user failed");
             goto exit_mutex_unlock;
         }
-        while(delimiter_index!=-1){
-        delimiter_index=find_new_line(kernel_buffer,count-(packet_start));
-        allocation_size=delimiter_index==-1?(count-packet_start):((delimiter_index-packet_start)+1);
+       do{
+        delimiter_index=find_new_line(kernel_buffer,(count-packet_start));
+        PDEBUG("Delimiter index : %d",delimiter_index);
+        allocation_size=(delimiter_index==-1)?(count-packet_start):((delimiter_index-packet_start)+1);
+        PDEBUG("Allocation_size is:%ld",allocation_size);
         if(packet_buffer_size==0){
             packet_buffer=kmalloc(allocation_size,GFP_KERNEL);
             if(packet_buffer==NULL){
@@ -136,19 +139,22 @@ ssize_t aesd_write(struct file
             }         
         }
         memcpy((packet_buffer+packet_buffer_size),(kernel_buffer+packet_start),allocation_size);
+        PDEBUG("Packet buffer:%s",packet_buffer);
         packet_buffer_size+=allocation_size;
+        PDEBUG("Packet buffer size:%ld",packet_buffer_size);
         if(delimiter_index!=-1){
             aesd_buf.buffptr=packet_buffer;
             aesd_buf.size=packet_buffer_size;
-            return_buffer=aesd_circular_buffer_add_entry(&driver_data->c_buffer,&aesd_buf);
-            if(return_buffer!=NULL){
-                kfree(return_buffer);
+            removed_entry=aesd_circular_buffer_add_entry(&driver_data->c_buffer,&aesd_buf);
+            if(removed_entry!=NULL){
+                kfree(removed_entry);
             }
             packet_buffer_size=0;
-            packet_start=packet_start+delimiter_index;
+            packet_start=packet_start+delimiter_index+1;
         }
-        retval+=allocation_size;
+        retval=count;
         }
+        while(delimiter_index!=-1);
     
     }
     exit_mutex_unlock:
