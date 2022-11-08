@@ -65,16 +65,16 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 {
     ssize_t retval = 0,ret,data_size;
     struct aesd_buffer_entry *aesd_entry;
-    struct aesd_dev *driver_data = filp->private_data;
+    struct aesd_dev *data = filp->private_data;
     size_t entry_offset_byte_rtn;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-    ret= mutex_lock_interruptible(&driver_data->char_dev_mutex_lock);
+    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);    
+    ret= mutex_lock_interruptible(&data->char_dev_mutex_lock);
     if(ret!=0){
         PDEBUG("Error while locking mutex");
         return ret;
     }
-    if(aesd_circular_buffer_find_entry_offset_for_fpos(&driver_data->c_buffer, *f_pos, &entry_offset_byte_rtn)!=NULL){
-        data_size=(entry_offset_byte_rtn < count)? entry_offset_byte_rtn:count;
+    if((aesd_entry=aesd_circular_buffer_find_entry_offset_for_fpos(&data->c_buffer, *f_pos, &entry_offset_byte_rtn))!=NULL){
+        data_size=((aesd_entry->size-entry_offset_byte_rtn) > count)? count:(aesd_entry->size-entry_offset_byte_rtn);
         ret=copy_to_user(buf, (aesd_entry->buffptr + entry_offset_byte_rtn), data_size);
         if(ret){
             retval=-EFAULT;
@@ -88,7 +88,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     else{
         retval=0;
     }
-    mutex_unlock(&driver_data->char_dev_mutex_lock);    
+    mutex_unlock(&data->char_dev_mutex_lock);    
     return retval;
 }
 
