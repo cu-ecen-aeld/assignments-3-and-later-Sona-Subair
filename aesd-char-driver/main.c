@@ -86,6 +86,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         }
     }
     else{
+        *f_pos=0;
         retval=0;
     }
     mutex_unlock(&data->char_dev_mutex_lock);    
@@ -210,7 +211,7 @@ void aesd_cleanup_module(void)
     cdev_del(&aesd_device.cdev);
     offset_in=aesd_device.c_buffer.in_offs;
     offset_out=aesd_device.c_buffer.out_offs;
-    while(offset_in!=offset_out || aesd_device.c_buffer.full!=false){
+    while((offset_in!=offset_out) || (aesd_device.c_buffer.full!=false)){
         kfree(aesd_device.c_buffer.entry[offset_out].buffptr);
         offset_out=(offset_out+1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
         if(aesd_device.c_buffer.full!=false){
