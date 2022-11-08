@@ -96,18 +96,18 @@ ssize_t aesd_write(struct file
  *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = -ENOMEM;
+    ssize_t retval=-ENOMEM;
     int delimiter_index,ret;
-    struct aesd_dev *driver_data = filp->private_data; 
+    struct aesd_dev *driver_data=filp->private_data; 
     size_t packet_start=0,allocation_size=0,packet_buffer_size=0;
     char* kernel_buffer=NULL,*packet_buffer=NULL,*return_buffer;
     struct aesd_buffer_entry aesd_buf;
 
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    ret= mutex_lock_interruptible(&driver_data->char_dev_mutex_lock);
-    if(ret!=0){
+    retval=mutex_lock_interruptible(&driver_data->char_dev_mutex_lock);
+    if(retval!=0){
         PDEBUG("Error while locking mutex");
-        return ret;
+        return retval;
     }
     kernel_buffer=kmalloc(count,GFP_KERNEL);
     if(kernel_buffer!=NULL){
@@ -118,7 +118,7 @@ ssize_t aesd_write(struct file
             goto exit_mutex_unlock;
         }
         while(delimiter_index!=-1){
-        delimiter_index=find_new_line(kernel_buffer,count);
+        delimiter_index=find_new_line(kernel_buffer,count-(packet_start));
         allocation_size=delimiter_index==-1?(count-packet_start):((delimiter_index-packet_start)+1);
         if(packet_buffer_size==0){
             packet_buffer=kmalloc(allocation_size,GFP_KERNEL);
@@ -128,13 +128,13 @@ ssize_t aesd_write(struct file
             }
         }
         if(packet_buffer_size>0){
-            packet_buffer=krealloc(packet_buffer,allocation_size,GFP_KERNEL);
+            packet_buffer=krealloc(packet_buffer,(allocation_size+packet_buffer_size),GFP_KERNEL);
             if(packet_buffer==NULL){
                 PDEBUG("Reallocation failed");
                 goto exit_mutex_unlock;
             }         
         }
-        memcpy((packet_buffer+packet_buffer_size),kernel_buffer,allocation_size);
+        memcpy((packet_buffer+packet_buffer_size),(kernel_buffer+packet_start),allocation_size);
         packet_buffer_size+=allocation_size;
         if(delimiter_index!=-1){
             aesd_buf.buffptr=packet_buffer;
@@ -143,6 +143,8 @@ ssize_t aesd_write(struct file
             if(return_buffer!=NULL){
                 kfree(return_buffer);
             }
+            packet_buffer_size=0;
+            packet_start=packet_start+delimiter_index;
         }
         retval+=allocation_size;
         }
@@ -150,6 +152,9 @@ ssize_t aesd_write(struct file
     }
     exit_mutex_unlock:
     mutex_unlock(&driver_data->char_dev_mutex_lock);
+    if(kernel_buffer!=NULL){
+        kfree(kernel_buffer);
+    }
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -188,7 +193,7 @@ int aesd_init_module(void)
         return result;
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
-    mutex_init(&aesd_device.char_dev_mutex_lock);
+    mutex_init(&(aesd_device.char_dev_mutex_lock));
     result = aesd_setup_cdev(&aesd_device);
 
     if( result ){
