@@ -32,7 +32,6 @@
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 #endif
 
-pthread_mutex_t mutex;
 int sockfd,new_sockfd,file_fd;
 bool interrupted=false;
 char* buf=NULL;
@@ -75,11 +74,6 @@ void* thread_function(void* thread_param){
         current_size+=BUFFER_SIZE;
     }
     if(recv_complete){
-    ret=pthread_mutex_lock(&mutex); 
-        if(ret!=0){
-        syslog(LOG_USER,"Error while unlocking mutex");
-        exit(-1);
-        } 
     file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
         if(file_fd == -1){
             syslog(LOG_USER, "Unable to open file to read");
@@ -107,11 +101,6 @@ void* thread_function(void* thread_param){
         }        
     }
 close(file_fd);  
-ret=pthread_mutex_unlock(&mutex);   
-if(ret!=0){
-    syslog(LOG_USER,"Error while unlocking mutex");
-    exit(-1);
-}
 thread_info->connection_complete_success =true;            
 }
 
@@ -203,7 +192,6 @@ if(deamon){
     }
 }
 struct thread_data* thread;
-ret=pthread_mutex_init(&mutex,NULL);
 SLIST_INIT(&head);
 syslog(LOG_USER, "Listening");
 listen(sockfd,BACKLOG);
