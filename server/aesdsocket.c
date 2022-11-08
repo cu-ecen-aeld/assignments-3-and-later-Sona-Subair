@@ -110,7 +110,7 @@ static void signal_handler (int signo)
     struct thread_data* ele=NULL;
     if(signo == SIGINT || signo == SIGTERM){   
     syslog (LOG_USER,"Caught Signal Exiting!\n");
-    if (access(FILE_PATH, F_OK) != -1){
+    if (access(FILE_PATH, F_OK) != -1 && (USE_AESD_CHAR_DEVICE!=1)){
     close(file_fd);
     ret=remove(FILE_PATH);
     if(ret==-1){
@@ -221,7 +221,7 @@ while(!interrupted){
 
     }
 }
-if (access(FILE_PATH, F_OK) != -1){
+if ((access(FILE_PATH, F_OK) != -1) && (USE_AESD_CHAR_DEVICE!=1)){
 close(file_fd);
 remove(FILE_PATH);
 }

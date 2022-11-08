@@ -210,9 +210,12 @@ void aesd_cleanup_module(void)
     cdev_del(&aesd_device.cdev);
     offset_in=aesd_device.c_buffer.in_offs;
     offset_out=aesd_device.c_buffer.out_offs;
-    while(aesd_device.c_buffer.full!=false){
+    while(offset_in!=offset_out || aesd_device.c_buffer.full!=false){
         kfree(aesd_device.c_buffer.entry[offset_out].buffptr);
         offset_out=(offset_out+1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        if(aesd_device.c_buffer.full!=false){
+        aesd_device.c_buffer.full=false;
+        }
     }
     mutex_destroy(&aesd_device.char_dev_mutex_lock);
     unregister_chrdev_region(devno, 1);
