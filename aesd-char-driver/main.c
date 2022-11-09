@@ -112,7 +112,6 @@ ssize_t aesd_write(struct file
     kernel_buffer=kmalloc(count,GFP_KERNEL);
     if(kernel_buffer!=NULL){
         ret=copy_from_user(kernel_buffer,buf,count);
-        PDEBUG("Count recieved is:%ld",count);
         PDEBUG("Kernel buffer is:%s",kernel_buffer);
         if(ret!=0){
             retval=-EFAULT;
@@ -138,6 +137,7 @@ ssize_t aesd_write(struct file
                 goto exit_mutex_unlock;
             }         
         }
+        //Performing memcpy
         memcpy((packet_buffer+packet_buffer_size),(kernel_buffer+packet_start),allocation_size);
         PDEBUG("Packet buffer:%s",packet_buffer);
         packet_buffer_size+=allocation_size;
