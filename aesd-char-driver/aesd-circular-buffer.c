@@ -62,7 +62,7 @@ if(buffer!=NULL){
     }
     buffer->entry[buffer->in_offs].buffptr=add_entry->buffptr;
     buffer->entry[buffer->in_offs].size=add_entry->size;
-
+    buffer->len+=add_entry->size;
     buffer->in_offs=((buffer->in_offs+1)>=AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)? 0 :(buffer->in_offs+1);
     if(buffer->in_offs==buffer->out_offs){
         buffer->full=true;

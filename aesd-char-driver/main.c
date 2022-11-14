@@ -21,6 +21,7 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/gfp.h>
+#include "aesd_ioctl.h"
 
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
@@ -41,6 +42,91 @@ int find_new_line(char* buffer, int count){
     return(-1);
 }
 
+
+loff_t aesd_llseek(struct file *filp,loff_t offs, int whence ){
+    loff_t retval=0;
+    struct aesd_dev *dev;
+    dev=filp->private_data;
+    if(filp->private_data){
+        dev=filp->private_data;
+    }
+    else{
+        retval=EINVAL;
+        goto exit_seek_function;
+    }
+    retval=mutex_lock_interruptible(&dev->char_dev_mutex_lock);
+    if(retval!=0){
+        PDEBUG("Error while locking mutex");
+        goto exit_seek_function;
+
+    }
+
+    retval=fixed_size_llseek(filp,offs,whence,dev->c_buffer.len);
+    if(retval==EINVAL){
+        PDEBUG("Fixed size seek failed");
+    }
+    mutex_unlock(&dev->char_dev_mutex_lock);
+    exit_seek_function:
+    return(retval);
+}
+
+long aesd_adjust_offset(struct file *filp,uint32_t write_cmd, uint32_t write_cmd_offset){
+    struct aesd_dev *dev;
+    long retval=0;
+    loff_t f_pos=0;
+    int i=0;    
+    size_t current_entry_size;
+    if((write_cmd>=AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) || (write_cmd_offset>=dev->c_buffer.entry[write_cmd].size)){
+        retval=EINVAL;
+        goto exit_function;
+    }
+    retval=mutex_lock_interruptible(&dev->char_dev_mutex_lock);    
+     if(retval!=0){
+        PDEBUG("Error while locking mutex");
+        goto exit_function;
+    }   
+    while(i<write_cmd){
+        current_entry_size=dev->c_buffer.entry[i].size;
+        f_pos+=current_entry_size;
+        i++;
+    }
+    f_pos +=write_cmd_offset;
+    filp->f_pos=f_pos;
+
+    exit_function:
+    return(retval);
+}
+
+
+long aesd_ioctl(struct file *filp, uint32_t cmd, unsigned long arg){
+    struct aesd_dev *dev;
+    struct aesd_seekto seek_cmd_info;
+    long retval;
+    int ret;
+    if(filp->private_data){
+        dev=filp->private_data;
+    }
+    else{
+        retval=EINVAL;
+        goto exit_function;
+    }    
+    if(_IOC_TYPE(cmd)!=AESD_IOC_MAGIC || _IOC_NR(cmd)>AESDCHAR_IOC_MAXNR){
+    retval=ENOTTY;
+    goto exit_function;
+    }
+    if(cmd==AESDCHAR_IOCSEEKTO){
+        ret=copy_from_user(&seek_cmd_info,(void __user *)arg,sizeof(seek_cmd_info));
+        if(ret!=0){
+    retval=EFAULT;
+    goto exit_function;           
+        }
+    retval=aesd_adjust_offset(filp,seek_cmd_info.write_cmd,seek_cmd_info.write_cmd_offset);
+    }
+    else
+    retval=ENOTTY;
+    exit_function:
+    return(retval);
+}
 
 int aesd_open(struct inode *inode, struct file *filp)
 {
@@ -139,9 +225,7 @@ ssize_t aesd_write(struct file
         }
         //Performing memcpy
         memcpy((packet_buffer+packet_buffer_size),(kernel_buffer+packet_start),allocation_size);
-        PDEBUG("Packet buffer:%s",packet_buffer);
         packet_buffer_size+=allocation_size;
-        PDEBUG("Packet buffer size:%ld",packet_buffer_size);
         if(delimiter_index!=-1){
             aesd_buf.buffptr=packet_buffer;
             aesd_buf.size=packet_buffer_size;
