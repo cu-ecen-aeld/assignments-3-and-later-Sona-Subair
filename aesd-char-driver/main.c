@@ -125,7 +125,7 @@ long aesd_ioctl(struct file *filp, uint32_t cmd, unsigned long arg){
         ret=copy_from_user(&seekto,(void __user *)arg,sizeof(seekto));
         if(ret!=0){
         PDEBUG("Copy from user failed");        
-        retval=EFAULT;
+        retval=-EFAULT;
         goto exit_function;           
         }
         else    
@@ -149,6 +149,7 @@ int aesd_open(struct inode *inode, struct file *filp)
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
+    filp->private_data=NULL;
     return 0;
 }
 
@@ -309,6 +310,7 @@ int aesd_init_module(void)
 
 void aesd_cleanup_module(void)
 {
+    PDEBUG("Cleanup module");
     dev_t devno = MKDEV(aesd_major, aesd_minor);
     int offset_in,offset_out;
     cdev_del(&aesd_device.cdev);

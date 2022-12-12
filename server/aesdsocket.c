@@ -147,12 +147,14 @@ void* thread_function(void* thread_param){
     if(recv_complete){  
      if(strncmp(buf,command_str,sizeof(command_str))==0){
         sscanf(buf,"AESDCHAR_IOCSEEKTO:%u,%u", &x, &y);
+        syslog(LOG_USER,"String compare successfull");
         syslog(LOG_USER,"Ioctal commands are%u,,%u",x,y);
         seekto.write_cmd=x;
         seekto.write_cmd_offset=y;
         if(ioctl(file_fd,AESDCHAR_IOCSEEKTO,&seekto)!=0){
             perror("ioctl");
             exit(-1);
+            
         }
     }
     else {
@@ -179,6 +181,7 @@ void* thread_function(void* thread_param){
            syslog(LOG_USER, "Sending failed"); 
         }             
     }
+    //memset(buf,0,sizeof(buf));
 }
 close(file_fd);  
 pthread_mutex_unlock(&mutex);   
@@ -315,7 +318,6 @@ while(!interrupted){
         close(client_data->socketfd);
         pthread_join(client_data->thread_id,NULL);
         SLIST_REMOVE(&head,client_data, thread_data, entries);
-        total_connections--;
 
     }
 }
