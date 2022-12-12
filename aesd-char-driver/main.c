@@ -44,14 +44,15 @@ int find_new_line(char* buffer, int count){
 
 
 loff_t aesd_llseek(struct file *filp,loff_t offs, int whence ){
-    loff_t retval=0;
+    PDEBUG("aesd llseek"); 
+    off_t retval=0;
     struct aesd_dev *dev;
-    dev=filp->private_data;
     if(filp->private_data){
-        dev=filp->private_data;
+        dev=filp->private_data;    
     }
     else{
-        retval=EINVAL;
+        PDEBUG("Error while opening file");
+        retval=-EINVAL;
         goto exit_seek_function;
     }
     retval=mutex_lock_interruptible(&dev->char_dev_mutex_lock);
@@ -62,7 +63,7 @@ loff_t aesd_llseek(struct file *filp,loff_t offs, int whence ){
     }
 
     retval=fixed_size_llseek(filp,offs,whence,dev->c_buffer.len);
-    if(retval==EINVAL){
+    if(retval==-EINVAL){
         PDEBUG("Fixed size seek failed");
     }
     mutex_unlock(&dev->char_dev_mutex_lock);
@@ -71,13 +72,15 @@ loff_t aesd_llseek(struct file *filp,loff_t offs, int whence ){
 }
 
 long aesd_adjust_offset(struct file *filp,uint32_t write_cmd, uint32_t write_cmd_offset){
-    struct aesd_dev *dev;
+    PDEBUG("adjust offset"); 
+    struct aesd_dev *dev=filp->private_data;
     long retval=0;
     loff_t f_pos=0;
     int i=0;    
     size_t current_entry_size;
+    PDEBUG("Entered aesd_adjust_offset"); 
     if((write_cmd>=AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) || (write_cmd_offset>=dev->c_buffer.entry[write_cmd].size)){
-        retval=EINVAL;
+        retval=-EINVAL;
         goto exit_function;
     }
     retval=mutex_lock_interruptible(&dev->char_dev_mutex_lock);    
@@ -92,38 +95,44 @@ long aesd_adjust_offset(struct file *filp,uint32_t write_cmd, uint32_t write_cmd
     }
     f_pos +=write_cmd_offset;
     filp->f_pos=f_pos;
-
+    mutex_unlock(&dev->char_dev_mutex_lock);
+    PDEBUG("offset set to %lld",f_pos);
     exit_function:
     return(retval);
 }
 
 
 long aesd_ioctl(struct file *filp, uint32_t cmd, unsigned long arg){
+    PDEBUG("aesd ioctl"); 
     struct aesd_dev *dev;
-    struct aesd_seekto seek_cmd_info;
+    struct aesd_seekto seekto;
     long retval;
     int ret;
     if(filp->private_data){
         dev=filp->private_data;
     }
     else{
-        retval=EINVAL;
+        retval=-EINVAL;
+        PDEBUG("Wrong file pointer");    
         goto exit_function;
     }    
     if(_IOC_TYPE(cmd)!=AESD_IOC_MAGIC || _IOC_NR(cmd)>AESDCHAR_IOC_MAXNR){
-    retval=ENOTTY;
-    goto exit_function;
+        retval=-ENOTTY;
+        PDEBUG("Not appropriate cmd and offset");
+        goto exit_function;
     }
     if(cmd==AESDCHAR_IOCSEEKTO){
-        ret=copy_from_user(&seek_cmd_info,(void __user *)arg,sizeof(seek_cmd_info));
+        ret=copy_from_user(&seekto,(void __user *)arg,sizeof(seekto));
         if(ret!=0){
-    retval=EFAULT;
-    goto exit_function;           
+        PDEBUG("Copy from user failed");        
+        retval=EFAULT;
+        goto exit_function;           
         }
-    retval=aesd_adjust_offset(filp,seek_cmd_info.write_cmd,seek_cmd_info.write_cmd_offset);
+        else    
+        retval=aesd_adjust_offset(filp,seekto.write_cmd,seekto.write_cmd_offset);
     }
     else
-    retval=ENOTTY;
+    retval=-ENOTTY;
     exit_function:
     return(retval);
 }
@@ -146,6 +155,7 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    PDEBUG("read"); 
     ssize_t retval = 0,ret,data_size;
     struct aesd_buffer_entry *aesd_entry;
     struct aesd_dev *data = filp->private_data;
@@ -182,6 +192,7 @@ ssize_t aesd_write(struct file
  *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    PDEBUG("aesd_write"); 
     ssize_t retval=-ENOMEM;
     int delimiter_index=0,ret;
     struct aesd_dev *driver_data=filp->private_data; 
@@ -254,6 +265,8 @@ struct file_operations aesd_fops = {
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek = aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
