@@ -19,6 +19,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <string.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 //pthread_mutex_t *mutex;
 
@@ -28,10 +29,12 @@
 #define USE_AESD_CHAR_DEVICE (1)
 #ifdef USE_AESD_CHAR_DEVICE
 #define FILE_PATH "/dev/aesdchar"
+
 #else
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 #endif
 
+pthread_mutex_t mutex;
 int sockfd,new_sockfd,file_fd;
 bool interrupted=false;
 char* buf=NULL;
@@ -49,15 +52,82 @@ struct thread_data{
 
 SLIST_HEAD(slisthead,thread_data) head=SLIST_HEAD_INITIALIZER(&head);
 
+int set_time(){
+    int ret;
+    struct itimerval timer_1;
+    getitimer(ITIMER_REAL,&timer_1);
+    timer_1.it_value.tv_sec=10;
+    timer_1.it_value.tv_usec=0;
+    timer_1.it_interval.tv_sec=10;
+    timer_1.it_interval.tv_usec=0;
+    ret=setitimer(ITIMER_REAL,&timer_1,NULL);
+    return(ret);
+}
+int reset_time(){
+    int ret;
+    struct itimerval timer_1;
+    getitimer(ITIMER_REAL,&timer_1);
+    timer_1.it_value.tv_sec=0;
+    timer_1.it_value.tv_usec=0;
+    timer_1.it_interval.tv_sec=0;
+    timer_1.it_interval.tv_usec=0;
+    ret=setitimer(ITIMER_REAL,&timer_1,NULL);
+    return(ret);
+}
+
+int write_time_to_file(int fd){
+    char outstr[100]={};
+    char buffer[100];
+    time_t t;
+    struct tm *tmp;
+    const char* fmt= "%a, %d %b %Y %T %z";
+    t = time(NULL);
+    tmp = localtime(&t);
+    if (tmp == NULL) {
+        perror("localtime");
+        return(-1);
+    }
+
+    if (strftime(outstr, sizeof(outstr), fmt, tmp) == 0) {
+        return(-1);
+    }
+    strcpy(buffer,"timestamp:");
+    strcat(buffer,outstr);
+    strcat(buffer,"\n");
+    write(fd,buffer,strlen(buffer)*sizeof(char));
+    return(0);
+}
 
 void* thread_function(void* thread_param){
     int nr,ret;
     int size_recived=0,size_read=0,s_recv,s_send,current_size=0;
     char clientIP[INET6_ADDRSTRLEN];
     struct thread_data* thread_info = (struct thread_data *)thread_param;
+    const char* command_str="AESDCHAR_IOCSEEKTO:";
+    unsigned int x,y;
+    struct aesd_seekto seekto;
     inet_ntop(AF_INET,thread_info->client,clientIP,sizeof(clientIP));
     bool recv_complete=false;
     buf=malloc(BUFFER_SIZE*sizeof(char*));
+    file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
+        if(file_fd == -1){
+            syslog(LOG_USER, "Unable to open file to read");
+            perror("open");
+            exit(-1);
+            }  
+
+    #ifndef USE_AESD_CHAR_DEVICE 
+    if(timer_alarm){
+        write_time_to_file(file_fd);
+        timer_alarm=false;    
+    }
+    #endif    
+
+   ret=pthread_mutex_lock(&mutex); 
+    if(ret!=0){
+    syslog(LOG_USER,"Error while unlocking mutex");
+    exit(-1);   
+    }              
     while(!recv_complete){
         buf=(char*)(realloc(buf,current_size+BUFFER_SIZE));
         s_recv=recv(thread_info->socketfd,(buf+current_size),BUFFER_SIZE,0);
@@ -73,23 +143,34 @@ void* thread_function(void* thread_param){
         }
         current_size+=BUFFER_SIZE;
     }
-    if(recv_complete){
-    file_fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
-        if(file_fd == -1){
-            syslog(LOG_USER, "Unable to open file to read");
-            perror("open");
+    syslog(LOG_USER,"Final buffer is:%s",buf);
+    if(recv_complete){  
+     if(strncmp(buf,command_str,sizeof(command_str))==0){
+        sscanf(buf,"AESDCHAR_IOCSEEKTO:%u,%u", &x, &y);
+        syslog(LOG_USER,"String compare successfull");
+        syslog(LOG_USER,"Ioctal commands are%u,,%u",x,y);
+        seekto.write_cmd=x;
+        seekto.write_cmd_offset=y;
+        if(ioctl(file_fd,AESDCHAR_IOCSEEKTO,&seekto)!=0){
+            perror("ioctl");
             exit(-1);
-            }     
+            
+        }
+    }
+    else {
+       
     nr=write(file_fd, buf, size_recived);
         if(nr!=size_recived){
             syslog(LOG_USER, "Writing to file not Successfull"); 
             perror("write");
             exit(-1);
             }   
-           
-    }
+
+    }         
     char message[BUFFER_SIZE];
+    #ifndef USE_AESD_CHAR_DEVICE
     lseek(file_fd,0,SEEK_SET);
+    #endif
     while((nr=read(file_fd,message,BUFFER_SIZE))!=0){
         if(nr ==-1){
             syslog(LOG_USER, "Reading from file not Successfull");   
@@ -98,12 +179,14 @@ void* thread_function(void* thread_param){
         s_send=send(thread_info->socketfd,message,(nr/sizeof(char)),0);
         if(s_send<0){
            syslog(LOG_USER, "Sending failed"); 
-        }        
+        }             
     }
+    //memset(buf,0,sizeof(buf));
+}
 close(file_fd);  
+pthread_mutex_unlock(&mutex);   
 thread_info->connection_complete_success =true;            
 }
-
 static void signal_handler (int signo)
 {
     int ret,fd;
@@ -132,6 +215,15 @@ static void signal_handler (int signo)
     interrupted=true;   
     exit (EXIT_SUCCESS);  
     } 
+    if(signo == SIGALRM){
+                timer_alarm = true;
+        if(total_connections==0){
+            fd=open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND ,0644);
+#ifndef USE_AESD_CHAR_DEVICE
+        write_time_to_file(fd);
+#endif            
+        }
+    }
 }
 
 
@@ -154,6 +246,7 @@ if(argc>=2){
 }
 signal (SIGTERM, signal_handler);
 signal (SIGINT, signal_handler);
+signal (SIGALRM, signal_handler);
     
 sockfd=socket(PF_INET,SOCK_STREAM,0);
 if(sockfd==-1){
@@ -162,7 +255,7 @@ if(sockfd==-1){
     return(-1);
 }
 tr=1;
-if (setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&tr,sizeof(int)) == -1) {
+if(setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&tr,sizeof(int)) == -1){
     perror("setsockopt");
     return(-1);
 }
@@ -193,6 +286,12 @@ if(deamon){
 }
 struct thread_data* thread;
 SLIST_INIT(&head);
+    #ifndef USE_AESD_CHAR_DEVICE 
+    ret=set_time();
+    if(ret!=0){
+    perror("setitimer");
+}
+    #endif
 syslog(LOG_USER, "Listening");
 listen(sockfd,BACKLOG);
 while(!interrupted){ 
@@ -213,6 +312,7 @@ while(!interrupted){
     if(ret!=0){
         return (-1);
     }  
+    total_connections++;
     SLIST_INSERT_HEAD(&head,client_data,entries);
     if(client_data->connection_complete_success){
         close(client_data->socketfd);
